@@ -1,0 +1,14 @@
+# Rust: kết quả build
+api/target/
+
+# Bí mật và cấu hình cục bộ (không bao giờ commit)
+.env
+
+docker/centrifugo/config.json
+
+# Env riêng của crate api
+api/.env
+
+example.json
+proccess.txt
+huong_dan.txt
