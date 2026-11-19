@@ -7,6 +7,7 @@ mod shutdown;
 mod state;
 use config::Config;
 
+use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 
 use tracing_subscriber::EnvFilter;
@@ -31,8 +32,18 @@ async fn main() {
         std::process::exit(1);
     });
 
+    let db = PgPoolOptions::new()
+        .max_connections(10)
+        .connect(&config.database_url)
+        .await
+        .unwrap_or_else(|err| {
+            eprintln!("Không kết nối được Postgres: {err}");
+            std::process::exit(1);
+        });
+
     let state = AppState {
         config: Arc::new(config),
+        db: db,
     };
 
     let addr = format!("0.0.0.0:{}", state.config.port);
