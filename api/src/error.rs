@@ -12,6 +12,9 @@ pub enum AppError {
 
     #[error("Dữ liệu không hợp lệ: {0}")]
     Validation(String),
+
+    #[error("lỗi database: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
 #[derive(serde::Serialize)]
@@ -24,6 +27,7 @@ impl IntoResponse for AppError {
         let status = match &self {
             AppError::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
+            AppError::Database(_) => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
             status,
@@ -32,5 +36,15 @@ impl IntoResponse for AppError {
             }),
         )
             .into_response()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loi_database_tra_ve_503() {
+        let response = AppError::from(sqlx::Error::RowNotFound).into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

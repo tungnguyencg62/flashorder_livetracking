@@ -18,6 +18,11 @@ pub struct HealthResponse {
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok" })
 }
+pub async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, AppError> {
+    sqlx::query("SELECT 1").execute(&state.db).await?;
+
+    Ok(Json(HealthResponse { status: "ready" }))
+}
 
 #[derive(Serialize)]
 pub struct InfoResponse {
@@ -41,33 +46,29 @@ pub async fn echo(Path(text): Path<String>) -> Result<Json<EchoResponse>, AppErr
     Ok(Json(EchoResponse { message: text }))
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::config::Config;
-//     use std::sync::Arc;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[tokio::test]
-//     async fn info_tra_ve_dung_port_tu_state() {
-//         let state = AppState {
-//             config: Arc::new(Config { port: 4000 }),
-//         };
-//         let Json(response) = info(State(state)).await;
-//         assert_eq!(response.port, 4000);
-//     }
+    #[tokio::test]
+    async fn info_tra_ve_dung_port_tu_state() {
+        let state = AppState::for_test(4000);
+        let Json(response) = info(State(state)).await;
+        assert_eq!(response.port, 4000);
+    }
 
-//     #[tokio::test]
-//     async fn echo_hop_le_tra_ve_ok() {
-//         let result = echo(Path("xin chào".to_string())).await;
-//         assert!(result.is_ok());
-//     }
+    #[tokio::test]
+    async fn echo_hop_le_tra_ve_ok() {
+        let result = echo(Path("xin chào".to_string())).await;
+        assert!(result.is_ok());
+    }
 
-//     #[tokio::test]
-//     async fn echo_rong_tra_ve_loi_validation() {
-//         let result = echo(Path(String::new())).await;
-//         match result {
-//             Err(AppError::Validation(_)) => {}
-//             _ => panic!("phải trả về AppError::Validation khi text rỗng"),
-//         }
-//     }
-// }
+    #[tokio::test]
+    async fn echo_rong_tra_ve_loi_validation() {
+        let result = echo(Path(String::new())).await;
+        match result {
+            Err(AppError::Validation(_)) => {}
+            _ => panic!("phải trả về AppError::Validation khi text rỗng"),
+        }
+    }
+}

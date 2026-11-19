@@ -1,5 +1,6 @@
 use std::sync::Arc;
 mod config;
+mod db;
 mod error;
 mod handlers;
 mod routes;
@@ -32,14 +33,13 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let db = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&config.database_url)
-        .await
-        .unwrap_or_else(|err| {
-            eprintln!("Không kết nối được Postgres: {err}");
+    let db = match db::connect(&config.database_url).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("lỗi kết nối database: {e}");
             std::process::exit(1);
-        });
+        }
+    };
 
     let state = AppState {
         config: Arc::new(config),
