@@ -5,6 +5,9 @@ use crate::error::AppError;
 pub struct Config {
     pub port: u16,
     pub database_url: String,
+    pub jwt_secret: String,
+    pub jwt_issuer: String,
+    pub jwt_audience: String,
 }
 
 impl Config {
@@ -17,9 +20,21 @@ impl Config {
         };
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| AppError::Config("thiếu biến môi trường DATABASE_URL".to_string()))?;
+
+        let jwt_secret = env::var("JWT_SECRET")
+            .map_err(|_| AppError::Config("thiếu biến môi trường JWT_SECRET".to_string()))?;
+
+        let jwt_issuer = env::var("JWT_ISSUER")
+            .map_err(|_| AppError::Config("thiếu biến môi trường JWT_ISSUER".to_string()))?;
+
+        let jwt_audience = env::var("JWT_AUDIENCE")
+            .map_err(|_| AppError::Config("thiếu biến môi trường JWT_AUDIENCE".to_string()))?;
         Ok(Config {
             port: port,
             database_url: database_url,
+            jwt_secret: jwt_secret,
+            jwt_issuer: jwt_issuer,
+            jwt_audience: jwt_audience,
         })
     }
 }

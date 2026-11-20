@@ -15,6 +15,9 @@ pub enum AppError {
 
     #[error("lỗi database: {0}")]
     Database(#[from] sqlx::Error),
+
+    #[error("Không xác thực được: {0}")]
+    Auth(String),
 }
 
 #[derive(serde::Serialize)]
@@ -28,6 +31,7 @@ impl IntoResponse for AppError {
             AppError::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Database(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::Auth(_) => StatusCode::UNAUTHORIZED,
         };
         (
             status,

@@ -21,6 +21,9 @@ impl AppState {
             config: Arc::new(Config {
                 port,
                 database_url: "postgres://test".to_string(),
+                jwt_secret: "test-secret".to_string(),
+                jwt_issuer: "test-issuer".to_string(),
+                jwt_audience: "test-aud".to_string(),
             }),
             db: sqlx::postgres::PgPoolOptions::new()
                 .connect_lazy("postgres://test")

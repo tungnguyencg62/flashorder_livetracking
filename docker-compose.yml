@@ -38,6 +38,7 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?thiếu JWT_SECRET trong .env}
       GOTRUE_JWT_EXP: 300
       GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_ISSUER: http://localhost:9999/auth/v1
     ports:
       - "127.0.0.1:9999:9999"
     depends_on:
