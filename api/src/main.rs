@@ -3,12 +3,12 @@ mod config;
 mod db;
 mod error;
 mod handlers;
+mod repository;
 mod routes;
 mod shutdown;
 mod state;
 use config::Config;
 
-use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 
 use tracing_subscriber::EnvFilter;
