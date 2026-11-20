@@ -36,22 +36,58 @@ pub async fn find_profile_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Profil
         .await
 }
 
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::config::Config;
+
+//     async fn pool_tu_database_url() -> PgPool {
+//         dotenvy::dotenv().ok();
+//         let config = Config::from_env().expect("cần DATABASE_URL để chạy test này");
+//         PgPool::connect(&config.database_url)
+//             .await
+//             .expect("không kết nối được Postgres — nhớ `docker compose up -d db`")
+//     }
+
+//     #[tokio::test]
+//     async fn insert_roi_tim_lai_dung_profile() {
+//         let pool = pool_tu_database_url().await;
+//         let id = Uuid::new_v4();
+
+//         let inserted = insert_profile(
+//             &pool,
+//             id,
+//             "test@example.com".to_string(),
+//             Some("Test User".to_string()),
+//         )
+//         .await
+//         .expect("insert phải thành công");
+
+//         assert_eq!(inserted.email, "test@example.com");
+//         assert_eq!(inserted.full_name.as_deref(), Some("Test User"));
+
+//         let found = find_profile_by_id(&pool, id)
+//             .await
+//             .expect("query phải thành công")
+//             .expect("phải tìm thấy profile vừa insert");
+
+//         assert_eq!(found.id, id);
+
+//         // Dọn dẹp thủ công — đây chính là nhược điểm sẽ nói ở phần giải thích,
+//         // và sẽ được giải quyết triệt để ở bước 13 bằng #[sqlx::test].
+//         sqlx::query("DELETE FROM profiles WHERE id = $1")
+//             .bind(id)
+//             .execute(&pool)
+//             .await
+//             .ok();
+//     }
+// }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
 
-    async fn pool_tu_database_url() -> PgPool {
-        dotenvy::dotenv().ok();
-        let config = Config::from_env().expect("cần DATABASE_URL để chạy test này");
-        PgPool::connect(&config.database_url)
-            .await
-            .expect("không kết nối được Postgres — nhớ `docker compose up -d db`")
-    }
-
-    #[tokio::test]
-    async fn insert_roi_tim_lai_dung_profile() {
-        let pool = pool_tu_database_url().await;
+    #[sqlx::test]
+    async fn insert_roi_tim_lai_dung_profile(pool: PgPool) -> sqlx::Result<()> {
         let id = Uuid::new_v4();
 
         let inserted = insert_profile(
@@ -60,25 +96,20 @@ mod tests {
             "test@example.com".to_string(),
             Some("Test User".to_string()),
         )
-        .await
-        .expect("insert phải thành công");
-
+        .await?;
         assert_eq!(inserted.email, "test@example.com");
         assert_eq!(inserted.full_name.as_deref(), Some("Test User"));
 
-        let found = find_profile_by_id(&pool, id)
-            .await
-            .expect("query phải thành công")
-            .expect("phải tìm thấy profile vừa insert");
+        let found = find_profile_by_id(&pool, id).await?;
+        assert_eq!(found.map(|p| p.id), Some(id));
 
-        assert_eq!(found.id, id);
+        Ok(())
+    }
 
-        // Dọn dẹp thủ công — đây chính là nhược điểm sẽ nói ở phần giải thích,
-        // và sẽ được giải quyết triệt để ở bước 13 bằng #[sqlx::test].
-        sqlx::query("DELETE FROM profiles WHERE id = $1")
-            .bind(id)
-            .execute(&pool)
-            .await
-            .ok();
+    #[sqlx::test]
+    async fn khong_tim_thay_profile_tra_ve_none(pool: PgPool) -> sqlx::Result<()> {
+        let result = find_profile_by_id(&pool, Uuid::new_v4()).await?;
+        assert!(result.is_none());
+        Ok(())
     }
 }
