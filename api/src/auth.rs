@@ -1,9 +1,13 @@
+use axum::{
+    extract::FromRequestParts,
+    http::{header, request::Parts},
+};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::error::AppError;
+use crate::{error::AppError, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct Claims {
@@ -37,6 +41,36 @@ pub fn verify_token(
 
     Ok(data.claims)
 }
+
+pub struct AuthUser(pub Claims);
+
+impl FromRequestParts<AppState> for AuthUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let header_value = parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| AppError::Auth("thiếu header Authorization".to_string()))?;
+        let token = header_value.strip_prefix("Bearer ").ok_or_else(|| {
+            AppError::Auth("header Authorization phải có dạng Bearer <token>".to_string())
+        })?;
+
+        let claims = verify_token(
+            token,
+            &state.config.jwt_secret,
+            &state.config.jwt_issuer,
+            &state.config.jwt_audience,
+        )?;
+
+        Ok(AuthUser(claims))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +207,50 @@ mod tests {
             verify_token(&token, SECRET, ISSUER, AUDIENCE),
             Err(AppError::Auth(_))
         ));
+    }
+    #[tokio::test]
+    async fn token_hop_le_trich_duoc_authuser() {
+        let state = AppState::for_test(4000);
+        let claims = sample_claims(ISSUER, AUDIENCE, exp_in(3600));
+        let token = encode_with(Algorithm::HS256, SECRET, &claims);
+
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", format!("Bearer {token}"))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = AuthUser::from_request_parts(&mut parts, &state).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn thieu_header_authorization_bi_tu_choi() {
+        let state = AppState::for_test(4000);
+
+        let (mut parts, _) = axum::http::Request::builder()
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = AuthUser::from_request_parts(&mut parts, &state).await;
+
+        assert!(matches!(result, Err(AppError::Auth(_))));
+    }
+
+    #[tokio::test]
+    async fn header_khong_co_tien_to_bearer_bi_tu_choi() {
+        let state = AppState::for_test(4000);
+
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", "khong-phai-dang-bearer")
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = AuthUser::from_request_parts(&mut parts, &state).await;
+
+        assert!(matches!(result, Err(AppError::Auth(_))));
     }
 }

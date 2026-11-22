@@ -22,8 +22,8 @@ impl AppState {
                 port,
                 database_url: "postgres://test".to_string(),
                 jwt_secret: "test-secret".to_string(),
-                jwt_issuer: "test-issuer".to_string(),
-                jwt_audience: "test-aud".to_string(),
+                jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
+                jwt_audience: "authenticated".to_string(),
             }),
             db: sqlx::postgres::PgPoolOptions::new()
                 .connect_lazy("postgres://test")
