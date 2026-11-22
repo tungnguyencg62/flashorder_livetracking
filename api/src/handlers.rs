@@ -3,8 +3,13 @@ use axum::{
     extract::{Path, State},
 };
 use serde::Serialize;
+use uuid::Uuid;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    auth::AuthUser,
+    error::AppError::{self, Auth},
+    state::AppState,
+};
 
 pub async fn hello_world() -> &'static str {
     "Hello, FlashOrder!"
@@ -46,8 +51,23 @@ pub async fn echo(Path(text): Path<String>) -> Result<Json<EchoResponse>, AppErr
     Ok(Json(EchoResponse { message: text }))
 }
 
+#[derive(Serialize)]
+pub struct MeResponse {
+    id: Uuid,
+    email: Option<String>,
+}
+
+pub async fn me(AuthUser(claims): AuthUser) -> Json<MeResponse> {
+    Json(MeResponse {
+        id: claims.sub,
+        email: claims.email,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::auth::Claims;
+
     use super::*;
 
     #[tokio::test]
@@ -70,5 +90,24 @@ mod tests {
             Err(AppError::Validation(_)) => {}
             _ => panic!("phải trả về AppError::Validation khi text rỗng"),
         }
+    }
+
+    #[tokio::test]
+    async fn me_tra_ve_dung_thong_tin_tu_claims() {
+        let claims = Claims {
+            sub: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            email: Some("user@example.com".to_string()),
+            role: String::new(),
+            aud: "authenticated".to_string(),
+            exp: 9999999999,
+            app_metadata: serde_json::Value::Null,
+        };
+        let expected_id = claims.sub;
+
+        let Json(response) = me(AuthUser(claims)).await;
+
+        assert_eq!(response.id, expected_id);
+        assert_eq!(response.email.as_deref(), Some("user@example.com"));
     }
 }
