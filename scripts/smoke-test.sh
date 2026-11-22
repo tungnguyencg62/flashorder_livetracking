@@ -25,6 +25,9 @@ LOGIN=$(curl -s -X POST "http://127.0.0.1:9999/token?grant_type=password" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")
 ACCESS_TOKEN=$(echo "$LOGIN" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $ACCESS_TOKEN" localhost:3000/v1/me
+curl -H "Authorization: Bearer $ACCESS_TOKEN" localhost:3000/v1/me
 echo "Nhận được access_token, độ dài: ${#ACCESS_TOKEN} ký tự"
 
 echo

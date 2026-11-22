@@ -29,6 +29,24 @@ pub async fn insert_profile(
     .await
 }
 
+pub async fn upsert_profile(
+    pool: &PgPool,
+    id: Uuid,
+    email: String,
+) -> Result<Profile, sqlx::Error> {
+    sqlx::query_as::<_, Profile>(
+        "INSERT INTO profiles (id, email) 
+        VALUES ($1, $2) 
+        ON CONFLICT (id) DO UPDATE 
+        SET email = EXCLUDED.email, updated_at = now() 
+        RETURNING *",
+    )
+    .bind(id)
+    .bind(email)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn find_profile_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Profile>, sqlx::Error> {
     sqlx::query_as::<_, Profile>("SELECT * FROM profiles WHERE id = $1")
         .bind(id)
@@ -110,6 +128,35 @@ mod tests {
     async fn khong_tim_thay_profile_tra_ve_none(pool: PgPool) -> sqlx::Result<()> {
         let result = find_profile_by_id(&pool, Uuid::new_v4()).await?;
         assert!(result.is_none());
+        Ok(())
+    }
+    #[sqlx::test]
+    async fn upsert_lan_dau_tao_moi_profile(pool: PgPool) -> sqlx::Result<()> {
+        let id = Uuid::new_v4();
+
+        let profile = upsert_profile(&pool, id, "first@example.com".to_string()).await?;
+
+        assert_eq!(profile.id, id);
+        assert_eq!(profile.email, "first@example.com");
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn upsert_lan_hai_cung_id_cap_nhat_khong_tao_dong_moi(pool: PgPool) -> sqlx::Result<()> {
+        let id = Uuid::new_v4();
+
+        upsert_profile(&pool, id, "old@example.com".to_string()).await?;
+        let updated = upsert_profile(&pool, id, "new@example.com".to_string()).await?;
+
+        assert_eq!(updated.email, "new@example.com");
+
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM profiles WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(count, 1);
+
         Ok(())
     }
 }

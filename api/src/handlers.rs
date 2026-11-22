@@ -2,12 +2,14 @@ use axum::{
     Json,
     extract::{Path, State},
 };
+use chrono::Weekday::Sat;
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
     auth::AuthUser,
     error::AppError::{self, Auth},
+    repository::{self, Profile},
     state::AppState,
 };
 
@@ -51,17 +53,17 @@ pub async fn echo(Path(text): Path<String>) -> Result<Json<EchoResponse>, AppErr
     Ok(Json(EchoResponse { message: text }))
 }
 
-#[derive(Serialize)]
-pub struct MeResponse {
-    id: Uuid,
-    email: Option<String>,
-}
+pub async fn me(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Profile>, AppError> {
+    let email = claims
+        .email
+        .ok_or_else(|| AppError::Auth("token không có email".to_string()))?;
 
-pub async fn me(AuthUser(claims): AuthUser) -> Json<MeResponse> {
-    Json(MeResponse {
-        id: claims.sub,
-        email: claims.email,
-    })
+    let profile = repository::upsert_profile(&state.db, claims.sub, email).await?;
+
+    Ok(Json(profile))
 }
 
 #[cfg(test)]
@@ -92,8 +94,23 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn me_tra_ve_dung_thong_tin_tu_claims() {
+    use crate::config::Config;
+    use sqlx::PgPool;
+    use std::sync::Arc;
+
+    #[sqlx::test]
+    async fn me_upsert_profile_lan_dau_tra_ve_profile_moi(pool: PgPool) -> sqlx::Result<()> {
+        let state = AppState {
+            config: Arc::new(Config {
+                port: 4000,
+                database_url: String::new(),
+                jwt_secret: "test-secret".to_string(),
+                jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
+                jwt_audience: "authenticated".to_string(),
+            }),
+            db: pool,
+        };
+
         let claims = Claims {
             sub: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -105,9 +122,31 @@ mod tests {
         };
         let expected_id = claims.sub;
 
-        let Json(response) = me(AuthUser(claims)).await;
+        let Json(profile) = me(AuthUser(claims), State(state))
+            .await
+            .expect("me phai thanh cong");
 
-        assert_eq!(response.id, expected_id);
-        assert_eq!(response.email.as_deref(), Some("user@example.com"));
+        assert_eq!(profile.id, expected_id);
+        assert_eq!(profile.email, "user@example.com");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn me_thieu_email_trong_token_tra_ve_loi_auth() {
+        let state = AppState::for_test(4000);
+        let claims = Claims {
+            sub: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            email: None,
+            role: String::new(),
+            aud: "authenticated".to_string(),
+            exp: 9999999999,
+            app_metadata: serde_json::Value::Null,
+        };
+
+        let result = me(AuthUser(claims), State(state)).await;
+
+        assert!(matches!(result, Err(AppError::Auth(_))));
     }
 }
