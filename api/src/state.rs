@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
-use crate::config::Config;
+use crate::{config::Config, revocation::RevocationStore};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub db: PgPool,
+    pub revocation: Arc<dyn RevocationStore>,
 }
 
 #[cfg(test)]
@@ -42,8 +43,11 @@ impl AppState {
                 jwt_secret: "test-secret".to_string(),
                 jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
                 jwt_audience: "authenticated".to_string(),
+                redis_url: "redis://127.0.0.1:6379/".to_string(),
+                // gotrue_url: "http://127.0.0.1:9".to_string(),
             }),
             db,
+            revocation: Arc::new(crate::revocation::InMemoryRevocationStore::new()),
         }
     }
 }

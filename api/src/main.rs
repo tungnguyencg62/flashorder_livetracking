@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod handlers;
 mod repository;
+mod revocation;
 mod routes;
 mod shutdown;
 mod state;
@@ -43,9 +44,19 @@ async fn main() {
         }
     };
 
+    let redis_conn = cache::connect(&config.redis_url).await.unwrap_or_else(|e| {
+        eprintln!("Không kết nối được Redis: {e}");
+        std::process::exit(1);
+    });
+    tracing::info!("Đã kết nối Redis");
+
+    let revocation: Arc<dyn revocation::RevocationStore> =
+        Arc::new(revocation::RedisRevocationStore::new(redis_conn));
+
     let state = AppState {
         config: Arc::new(config),
         db: db,
+        revocation: revocation,
     };
 
     let addr = format!("0.0.0.0:{}", state.config.port);

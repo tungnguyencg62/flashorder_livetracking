@@ -21,6 +21,9 @@ pub enum AppError {
 
     #[error("Không đủ quyền: {0}")]
     Forbidden(String),
+
+    #[error("Lỗi cache: {0}")]
+    Cache(String),
 }
 
 #[derive(serde::Serialize)]
@@ -36,6 +39,7 @@ impl IntoResponse for AppError {
             AppError::Database(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::Auth(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::Cache(_) => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
             status,

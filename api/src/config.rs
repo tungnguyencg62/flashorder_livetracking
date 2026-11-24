@@ -8,6 +8,8 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_issuer: String,
     pub jwt_audience: String,
+    pub redis_url: String,
+    // pub gotrue_url: String,
 }
 
 impl Config {
@@ -29,12 +31,18 @@ impl Config {
 
         let jwt_audience = env::var("JWT_AUDIENCE")
             .map_err(|_| AppError::Config("thiếu biến môi trường JWT_AUDIENCE".to_string()))?;
+        let redis_url = env::var("REDIS_URL")
+            .map_err(|_| AppError::Config("thiếu biến môi trường REDIS_URL".to_string()))?;
+        // let gotrue_url = env::var("GOTRUE_URL")
+        //     .map_err(|_| AppError::Config("thiếu biến môi trường GOTRUE_URL".to_string()))?;
         Ok(Config {
             port: port,
             database_url: database_url,
             jwt_secret: jwt_secret,
             jwt_issuer: jwt_issuer,
             jwt_audience: jwt_audience,
+            redis_url: redis_url,
+            // gotrue_url: gotrue_url,
         })
     }
 }

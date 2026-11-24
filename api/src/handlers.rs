@@ -113,17 +113,18 @@ mod tests {
 
     #[sqlx::test]
     async fn me_upsert_profile_lan_dau_tra_ve_profile_moi(pool: PgPool) -> sqlx::Result<()> {
-        let state = AppState {
-            config: Arc::new(Config {
-                port: 4000,
-                database_url: String::new(),
-                jwt_secret: "test-secret".to_string(),
-                jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
-                jwt_audience: "authenticated".to_string(),
-            }),
-            db: pool,
-        };
-
+        // let state = AppState {
+        //     config: Arc::new(Config {
+        //         port: 4000,
+        //         database_url: String::new(),
+        //         jwt_secret: "test-secret".to_string(),
+        //         jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
+        //         jwt_audience: "authenticated".to_string(),
+        //     }),
+        //     db: pool,
+        //     revocation: Arc::new(crate::revocation::InMemoryRevocationStore::new()),
+        // };
+        let state = AppState::for_test_with_db(4000, pool);
         let claims = Claims {
             sub: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
