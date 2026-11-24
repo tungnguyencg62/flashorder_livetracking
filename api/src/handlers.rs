@@ -7,8 +7,8 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    auth::AuthUser,
-    error::AppError::{self, Auth},
+    auth::{AuthUser, Claims, Merchant, RequireRole},
+    error::AppError::{self},
     repository::{self, Profile},
     state::AppState,
 };
@@ -64,6 +64,19 @@ pub async fn me(
     let profile = repository::upsert_profile(&state.db, claims.sub, email).await?;
 
     Ok(Json(profile))
+}
+
+#[derive(Serialize)]
+pub struct MerchantOnlyResponse {
+    message: String,
+}
+
+pub async fn merchant_only_demo(
+    RequireRole(AuthUser(claims), _): RequireRole<Merchant>,
+) -> Json<MerchantOnlyResponse> {
+    Json(MerchantOnlyResponse {
+        message: format!("Xin chào, merchant! User ID của bạn là {}", claims.sub),
+    })
 }
 
 #[cfg(test)]
@@ -148,5 +161,25 @@ mod tests {
         let result = me(AuthUser(claims), State(state)).await;
 
         assert!(matches!(result, Err(AppError::Auth(_))));
+    }
+
+    use std::marker::PhantomData;
+
+    #[tokio::test]
+    async fn merchant_only_demo_tra_ve_dung_message() {
+        let claims = Claims {
+            sub: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            email: Some("merchant@example.com".to_string()),
+            role: String::new(),
+            aud: "authenticated".to_string(),
+            exp: 9999999999,
+            app_metadata: serde_json::json!({ "role": "merchant" }),
+        };
+        let expected_id = claims.sub;
+
+        let Json(response) = merchant_only_demo(RequireRole(AuthUser(claims), PhantomData)).await;
+
+        assert!(response.message.contains(&expected_id.to_string()));
     }
 }

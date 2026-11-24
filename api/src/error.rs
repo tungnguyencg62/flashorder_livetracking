@@ -18,6 +18,9 @@ pub enum AppError {
 
     #[error("Không xác thực được: {0}")]
     Auth(String),
+
+    #[error("Không đủ quyền: {0}")]
+    Forbidden(String),
 }
 
 #[derive(serde::Serialize)]
@@ -32,6 +35,7 @@ impl IntoResponse for AppError {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Database(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::Auth(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
         };
         (
             status,

@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use axum::{
     extract::FromRequestParts,
     http::{header, request::Parts},
@@ -19,6 +21,15 @@ pub struct Claims {
     pub exp: usize,
     #[serde(default)]
     pub app_metadata: Value,
+}
+
+impl Claims {
+    pub fn business_role(&self) -> &str {
+        self.app_metadata
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("customer")
+    }
 }
 
 pub fn verify_token(
@@ -68,6 +79,43 @@ impl FromRequestParts<AppState> for AuthUser {
         )?;
 
         Ok(AuthUser(claims))
+    }
+}
+
+pub trait Role {
+    const NAME: &'static str;
+}
+
+pub struct Merchant;
+impl Role for Merchant {
+    const NAME: &'static str = "merchant";
+}
+pub struct Admin;
+impl Role for Admin {
+    const NAME: &'static str = "admin";
+}
+
+pub struct RequireRole<R: Role>(pub AuthUser, pub PhantomData<R>);
+
+impl<R: Role + Send + Sync> FromRequestParts<AppState> for RequireRole<R> {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+
+        let actual_role = user.0.business_role();
+
+        if actual_role != R::NAME {
+            return Err(AppError::Forbidden(format!(
+                "yêu cầu vai trò '{}', hiện tại là '{}'",
+                R::NAME,
+                actual_role
+            )));
+        }
+        Ok(RequireRole(user, PhantomData))
     }
 }
 
@@ -252,5 +300,61 @@ mod tests {
         let result = AuthUser::from_request_parts(&mut parts, &state).await;
 
         assert!(matches!(result, Err(AppError::Auth(_))));
+    }
+    #[test]
+    fn business_role_doc_tu_app_metadata() {
+        let mut claims_json = sample_claims(ISSUER, AUDIENCE, exp_in(3600));
+        claims_json["app_metadata"] = json!({ "role": "merchant" });
+        let claims: Claims = serde_json::from_value(claims_json).unwrap();
+
+        assert_eq!(claims.business_role(), "merchant");
+    }
+
+    #[test]
+    fn business_role_mac_dinh_customer_khi_khong_co() {
+        let claims: Claims =
+            serde_json::from_value(sample_claims(ISSUER, AUDIENCE, exp_in(3600))).unwrap();
+
+        assert_eq!(claims.business_role(), "customer");
+    }
+
+    fn claims_with_role(role: &str, exp: usize) -> serde_json::Value {
+        let mut claims = sample_claims(ISSUER, AUDIENCE, exp);
+        claims["app_metadata"] = json!({ "role": role });
+        claims
+    }
+
+    #[tokio::test]
+    async fn require_role_merchant_cho_qua_dung_vai_tro() {
+        let state = AppState::for_test(4000);
+        let claims = claims_with_role("merchant", exp_in(3600));
+        let token = encode_with(Algorithm::HS256, SECRET, &claims);
+
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", format!("Bearer {token}"))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = RequireRole::<Merchant>::from_request_parts(&mut parts, &state).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn require_role_merchant_tu_choi_vai_tro_khac() {
+        let state = AppState::for_test(4000);
+        let claims = claims_with_role("customer", exp_in(3600));
+        let token = encode_with(Algorithm::HS256, SECRET, &claims);
+
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", format!("Bearer {token}"))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = RequireRole::<Merchant>::from_request_parts(&mut parts, &state).await;
+
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
     }
 }

@@ -14,6 +14,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/echo/{text}", get(echo))
         .route("/ready", get(ready))
         .route("/v1/me", get(handlers::me))
+        .route("/v1/merchant-only", get(handlers::merchant_only_demo))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -86,10 +87,10 @@ mod tests {
         .unwrap()
     }
 
-    async fn call_me(app: Router, token: &str) -> StatusCode {
+    async fn call_me_path(app: Router, path: &str, token: &str) -> StatusCode {
         app.oneshot(
             Request::builder()
-                .uri("/v1/me")
+                .uri(path)
                 .header(AUTHORIZATION, format!("Bearer {token}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -99,12 +100,12 @@ mod tests {
         .status()
     }
 
-    #[tokio::test]
-    async fn me_qua_router_voi_token_hop_le_tra_ve_200() {
-        let app = build_router(AppState::for_test(4000));
+    #[sqlx::test]
+    async fn me_qua_router_voi_token_hop_le_tra_ve_200(pool: sqlx::PgPool) {
+        let app = build_router(AppState::for_test_with_db(4000, pool));
         let token = make_token("test-secret", 3600);
 
-        assert_eq!(call_me(app, &token).await, StatusCode::OK);
+        assert_eq!(call_me_path(app, "/v1/me", &token).await, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -112,7 +113,10 @@ mod tests {
         let app = build_router(AppState::for_test(4000));
         let token = make_token("secret-khac-voi-config", 3600);
 
-        assert_eq!(call_me(app, &token).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            call_me_path(app, "/v1/me", &token).await,
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     #[tokio::test]
@@ -120,7 +124,52 @@ mod tests {
         let app = build_router(AppState::for_test(4000));
         let token = make_token("test-secret", -3600);
 
-        assert_eq!(call_me(app, &token).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            call_me_path(app, "/v1/me", &token).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    fn make_token_with_role(role: &str, exp_offset_seconds: i64) -> String {
+        let exp = (chrono::Utc::now().timestamp() + exp_offset_seconds) as usize;
+        let claims = json!({
+            "sub": "11111111-1111-1111-1111-111111111111",
+            "session_id": "22222222-2222-2222-2222-222222222222",
+            "email": "user@example.com",
+            "role": "",
+            "iss": "http://localhost:9999/auth/v1",
+            "aud": "authenticated",
+            "exp": exp,
+            "app_metadata": { "role": role }
+        });
+
+        encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret("test-secret".as_bytes()),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn merchant_only_qua_router_voi_vai_tro_dung_tra_ve_200() {
+        let app = build_router(AppState::for_test(4000));
+        let token = make_token_with_role("merchant", 3600);
+
+        assert_eq!(
+            call_me_path(app, "/v1/merchant-only", &token).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn merchant_only_qua_router_voi_vai_tro_sai_tra_ve_403() {
+        let app = build_router(AppState::for_test(4000));
+        let token = make_token_with_role("customer", 3600);
+
+        assert_eq!(
+            call_me_path(app, "/v1/merchant-only", &token).await,
+            StatusCode::FORBIDDEN
+        );
     }
 }
 
