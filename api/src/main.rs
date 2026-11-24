@@ -1,5 +1,6 @@
 use std::sync::Arc;
 mod auth;
+mod cache;
 mod config;
 mod db;
 mod error;
