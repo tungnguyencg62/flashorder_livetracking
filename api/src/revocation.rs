@@ -1,8 +1,32 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
+
 use redis::aio::ConnectionManager;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::error::AppError;
+
+pub const REVOCATION_CHECK_TIMEOUT: Duration = Duration::from_millis(200);
+
+pub async fn check_revoked_fail_open<F>(check: F, timeout_ttl: Duration, what: &str) -> bool
+where
+    F: Future<Output = Result<bool, AppError>>,
+{
+    match timeout(timeout_ttl, check).await {
+        Ok(Ok(revoked)) => revoked,
+        Ok(Err(err)) => {
+            tracing::warn!("Lỗi khi kiểm tra revocation ({what}), fail-open: {err}");
+            false
+        }
+        Err(_) => {
+            // timeout
+            tracing::warn!("Timeout khi kiểm tra revocation ({what}), fail-open");
+            false
+        }
+    }
+}
 
 #[async_trait]
 pub trait RevocationStore: Send + Sync {
@@ -155,5 +179,34 @@ mod tests {
         assert!(store.is_user_revoked(user_id).await.unwrap());
 
         cleanup(&format!("revoked:user:{user_id}")).await;
+    }
+    #[tokio::test]
+    async fn fail_open_tra_ve_false_khi_store_loi() {
+        let check = async { Err(AppError::Cache("giả lập lỗi".to_string())) };
+
+        let revoked = check_revoked_fail_open(check, Duration::from_millis(100), "test").await;
+
+        assert!(!revoked);
+    }
+
+    #[tokio::test]
+    async fn fail_open_tra_ve_false_khi_qua_timeout() {
+        let check = async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            Ok(true) // giả sử thực ra đã bị revoke, nhưng trả lời quá chậm
+        };
+
+        let revoked = check_revoked_fail_open(check, Duration::from_millis(50), "test").await;
+
+        assert!(!revoked);
+    }
+
+    #[tokio::test]
+    async fn khong_fail_open_khi_store_tra_loi_kip_va_dung() {
+        let check = async { Ok(true) };
+
+        let revoked = check_revoked_fail_open(check, Duration::from_millis(100), "test").await;
+
+        assert!(revoked);
     }
 }

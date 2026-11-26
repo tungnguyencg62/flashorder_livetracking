@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, revocation::check_revoked_fail_open, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct Claims {
@@ -78,15 +78,22 @@ impl FromRequestParts<AppState> for AuthUser {
             &state.config.jwt_audience,
         )?;
 
-        if state
-            .revocation
-            .is_session_revoked(claims.session_id)
-            .await?
-        {
+        let session_revoked = check_revoked_fail_open(
+            state.revocation.is_session_revoked(claims.session_id),
+            crate::revocation::REVOCATION_CHECK_TIMEOUT,
+            "session",
+        )
+        .await;
+        if session_revoked {
             return Err(AppError::Auth("phiên đăng nhập đã bị thu hồi".to_string()));
         }
-
-        if state.revocation.is_user_revoked(claims.sub).await? {
+        let user_revoked = check_revoked_fail_open(
+            state.revocation.is_user_revoked(claims.sub),
+            crate::revocation::REVOCATION_CHECK_TIMEOUT,
+            "user",
+        )
+        .await;
+        if user_revoked {
             return Err(AppError::Auth("tài khoản đã bị khoá".to_string()));
         }
 
