@@ -53,7 +53,7 @@ pub fn verify_token(
     Ok(data.claims)
 }
 
-pub struct AuthUser(pub Claims);
+pub struct AuthUser(pub Claims, pub String);
 
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
@@ -97,7 +97,7 @@ impl FromRequestParts<AppState> for AuthUser {
             return Err(AppError::Auth("tài khoản đã bị khoá".to_string()));
         }
 
-        Ok(AuthUser(claims))
+        Ok(AuthUser(claims, token.to_string()))
     }
 }
 

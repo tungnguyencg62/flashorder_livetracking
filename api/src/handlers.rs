@@ -2,12 +2,12 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use chrono::Weekday::Sat;
+
+use reqwest::{StatusCode, header::AUTHORIZATION};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::{
-    auth::{AuthUser, Claims, Merchant, RequireRole},
+    auth::{AuthUser, Merchant, RequireRole},
     error::AppError::{self},
     repository::{self, Profile},
     state::AppState,
@@ -54,7 +54,7 @@ pub async fn echo(Path(text): Path<String>) -> Result<Json<EchoResponse>, AppErr
 }
 
 pub async fn me(
-    AuthUser(claims): AuthUser,
+    AuthUser(claims, _): AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Profile>, AppError> {
     let email = claims
@@ -72,11 +72,45 @@ pub struct MerchantOnlyResponse {
 }
 
 pub async fn merchant_only_demo(
-    RequireRole(AuthUser(claims), _): RequireRole<Merchant>,
+    RequireRole(AuthUser(claims, _), _): RequireRole<Merchant>,
 ) -> Json<MerchantOnlyResponse> {
     Json(MerchantOnlyResponse {
         message: format!("Xin chào, merchant! User ID của bạn là {}", claims.sub),
     })
+}
+
+pub async fn logout(
+    AuthUser(claims, token): AuthUser,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<StatusCode, AppError> {
+    let ttl_seconds = (claims.exp as i64 - chrono::Utc::now().timestamp()).max(1) as u64;
+
+    state
+        .revocation
+        .revoke_session(claims.session_id, ttl_seconds)
+        .await
+        .map_err(|_| AppError::Cache("không ghi được revocation, logout thất bại".to_string()))?;
+
+    let client = reqwest::Client::new();
+    let gotrue_logout_url = format!("{}/logout", state.config.gotrue_url);
+
+    match client
+        .post(&gotrue_logout_url)
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {}
+        Ok(response) => tracing::warn!(
+            "GoTrue logout trả về status {} — revocation nội bộ đã ghi nên vẫn coi là logout thành công",
+            response.status()
+        ),
+        Err(err) => tracing::warn!(
+            "Không gọi được GoTrue logout ({err}) — revocation nội bộ đã ghi nên vẫn coi là logout thành công"
+        ),
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -107,9 +141,9 @@ mod tests {
         }
     }
 
-    use crate::config::Config;
     use sqlx::PgPool;
-    use std::sync::Arc;
+
+    use uuid::Uuid;
 
     #[sqlx::test]
     async fn me_upsert_profile_lan_dau_tra_ve_profile_moi(pool: PgPool) -> sqlx::Result<()> {
@@ -136,7 +170,7 @@ mod tests {
         };
         let expected_id = claims.sub;
 
-        let Json(profile) = me(AuthUser(claims), State(state))
+        let Json(profile) = me(AuthUser(claims, "token-gia".to_string()), State(state))
             .await
             .expect("me phai thanh cong");
 
@@ -159,7 +193,7 @@ mod tests {
             app_metadata: serde_json::Value::Null,
         };
 
-        let result = me(AuthUser(claims), State(state)).await;
+        let result = me(AuthUser(claims, "token-gia".to_string()), State(state)).await;
 
         assert!(matches!(result, Err(AppError::Auth(_))));
     }
@@ -179,7 +213,11 @@ mod tests {
         };
         let expected_id = claims.sub;
 
-        let Json(response) = merchant_only_demo(RequireRole(AuthUser(claims), PhantomData)).await;
+        let Json(response) = merchant_only_demo(RequireRole(
+            AuthUser(claims, "token-gia".to_string()),
+            PhantomData,
+        ))
+        .await;
 
         assert!(response.message.contains(&expected_id.to_string()));
     }

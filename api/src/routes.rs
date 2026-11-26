@@ -1,4 +1,7 @@
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use tower_http::trace::TraceLayer;
 
 use crate::{
@@ -15,6 +18,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/ready", get(ready))
         .route("/v1/me", get(handlers::me))
         .route("/v1/merchant-only", get(handlers::merchant_only_demo))
+        .route("/v1/auth/logout", post(handlers::logout))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -199,6 +203,31 @@ mod tests {
 
         let app = build_router(state);
         let token = make_token("test-secret", 3600);
+
+        assert_eq!(
+            call_me_path(app, "/v1/me", &token).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_qua_router_sau_do_me_bi_tu_choi_vi_da_revoke() {
+        let app = build_router(AppState::for_test(4000));
+        let token = make_token("test-secret", 3600);
+
+        let logout_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/logout")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
 
         assert_eq!(
             call_me_path(app, "/v1/me", &token).await,

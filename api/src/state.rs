@@ -44,7 +44,7 @@ impl AppState {
                 jwt_issuer: "http://localhost:9999/auth/v1".to_string(),
                 jwt_audience: "authenticated".to_string(),
                 redis_url: "redis://127.0.0.1:6379/".to_string(),
-                // gotrue_url: "http://127.0.0.1:9".to_string(),
+                gotrue_url: "http://127.0.0.1:9".to_string(),
             }),
             db,
             revocation: Arc::new(crate::revocation::InMemoryRevocationStore::new()),
