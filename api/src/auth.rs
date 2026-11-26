@@ -78,6 +78,18 @@ impl FromRequestParts<AppState> for AuthUser {
             &state.config.jwt_audience,
         )?;
 
+        if state
+            .revocation
+            .is_session_revoked(claims.session_id)
+            .await?
+        {
+            return Err(AppError::Auth("phiên đăng nhập đã bị thu hồi".to_string()));
+        }
+
+        if state.revocation.is_user_revoked(claims.sub).await? {
+            return Err(AppError::Auth("tài khoản đã bị khoá".to_string()));
+        }
+
         Ok(AuthUser(claims))
     }
 }
@@ -356,5 +368,46 @@ mod tests {
         let result = RequireRole::<Merchant>::from_request_parts(&mut parts, &state).await;
 
         assert!(matches!(result, Err(AppError::Forbidden(_))));
+    }
+    #[tokio::test]
+    async fn token_voi_session_bi_revoke_bi_tu_choi() {
+        let state = AppState::for_test(4000);
+        let session_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+        state
+            .revocation
+            .revoke_session(session_id, 60)
+            .await
+            .unwrap();
+
+        let claims = sample_claims(ISSUER, AUDIENCE, exp_in(3600));
+        let token = encode_with(Algorithm::HS256, SECRET, &claims);
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", format!("Bearer {token}"))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = AuthUser::from_request_parts(&mut parts, &state).await;
+
+        assert!(matches!(result, Err(AppError::Auth(_))));
+    }
+
+    #[tokio::test]
+    async fn token_voi_user_bi_revoke_bi_tu_choi() {
+        let state = AppState::for_test(4000);
+        let user_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        state.revocation.revoke_user(user_id, 60).await.unwrap();
+
+        let claims = sample_claims(ISSUER, AUDIENCE, exp_in(3600));
+        let token = encode_with(Algorithm::HS256, SECRET, &claims);
+        let (mut parts, _) = axum::http::Request::builder()
+            .header("Authorization", format!("Bearer {token}"))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = AuthUser::from_request_parts(&mut parts, &state).await;
+
+        assert!(matches!(result, Err(AppError::Auth(_))));
     }
 }

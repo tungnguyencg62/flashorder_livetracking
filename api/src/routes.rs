@@ -28,6 +28,7 @@ mod tests {
     use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
     use serde_json::json;
     use tower::ServiceExt;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn request_qua_full_router_co_tracelayer_van_tra_200() {
@@ -169,6 +170,39 @@ mod tests {
         assert_eq!(
             call_me_path(app, "/v1/merchant-only", &token).await,
             StatusCode::FORBIDDEN
+        );
+    }
+    #[tokio::test]
+    async fn me_qua_router_voi_session_da_bi_revoke_tra_ve_401() {
+        let state = AppState::for_test(4000);
+        let session_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+        state
+            .revocation
+            .revoke_session(session_id, 60)
+            .await
+            .unwrap();
+
+        let app = build_router(state);
+        let token = make_token("test-secret", 3600);
+
+        assert_eq!(
+            call_me_path(app, "/v1/me", &token).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn me_qua_router_voi_user_da_bi_revoke_tra_ve_401() {
+        let state = AppState::for_test(4000);
+        let user_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        state.revocation.revoke_user(user_id, 60).await.unwrap();
+
+        let app = build_router(state);
+        let token = make_token("test-secret", 3600);
+
+        assert_eq!(
+            call_me_path(app, "/v1/me", &token).await,
+            StatusCode::UNAUTHORIZED
         );
     }
 }
