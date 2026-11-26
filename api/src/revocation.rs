@@ -9,6 +9,8 @@ use uuid::Uuid;
 use crate::error::AppError;
 
 pub const REVOCATION_CHECK_TIMEOUT: Duration = Duration::from_millis(200);
+/// ~10 năm — coi như vĩnh viễn cho tới khi có thao tác unban riêng (chưa có trong roadmap này).
+pub const PERMANENT_BAN_TTL_SECONDS: u64 = 300;
 
 pub async fn check_revoked_fail_open<F>(check: F, timeout_ttl: Duration, what: &str) -> bool
 where

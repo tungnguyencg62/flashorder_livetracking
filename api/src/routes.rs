@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use tower_http::trace::TraceLayer;
 
@@ -19,6 +19,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/me", get(handlers::me))
         .route("/v1/merchant-only", get(handlers::merchant_only_demo))
         .route("/v1/auth/logout", post(handlers::logout))
+        .route("/v1/admin/users/{user_id}/ban", put(handlers::ban_user))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -233,6 +234,52 @@ mod tests {
             call_me_path(app, "/v1/me", &token).await,
             StatusCode::UNAUTHORIZED
         );
+    }
+    #[tokio::test]
+    async fn ban_qua_router_lam_user_do_bi_tu_choi_o_me() {
+        let app = build_router(AppState::for_test(4000));
+        let admin_token = make_token_with_role("admin", 3600);
+        let target_user_id = "11111111-1111-1111-1111-111111111111"; // trùng sub trong make_token
+
+        let ban_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/admin/users/{target_user_id}/ban"))
+                    .header(AUTHORIZATION, format!("Bearer {admin_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ban_response.status(), StatusCode::NO_CONTENT);
+
+        let banned_user_token = make_token("test-secret", 3600);
+        assert_eq!(
+            call_me_path(app, "/v1/me", &banned_user_token).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn ban_qua_router_voi_vai_tro_khong_phai_admin_tra_ve_403() {
+        let app = build_router(AppState::for_test(4000));
+        let token = make_token_with_role("merchant", 3600);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/v1/admin/users/11111111-1111-1111-1111-111111111111/ban")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }
 

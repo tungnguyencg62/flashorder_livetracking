@@ -4,7 +4,7 @@ use axum::{
     extract::FromRequestParts,
     http::{header, request::Parts},
 };
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -53,6 +53,21 @@ pub fn verify_token(
     Ok(data.claims)
 }
 
+pub fn mint_service_token(secret: &str, audience: &str) -> Result<String, AppError> {
+    let claims = serde_json::json!({
+            "sub":"internal-service",
+            "role":"service_role",
+            "aud": audience,
+            "exp": (chrono::Utc::now().timestamp() + 60) as u64
+    });
+
+    encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|err| AppError::Auth(format!("không mint được service token: {err}")))
+}
 pub struct AuthUser(pub Claims, pub String);
 
 impl FromRequestParts<AppState> for AuthUser {
@@ -416,5 +431,20 @@ mod tests {
         let result = AuthUser::from_request_parts(&mut parts, &state).await;
 
         assert!(matches!(result, Err(AppError::Auth(_))));
+    }
+    #[test]
+    fn mint_service_token_tao_duoc_token_co_role_service_role() {
+        let token = mint_service_token("test-secret", "authenticated").unwrap();
+
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.set_audience(&["authenticated"]);
+        let data = decode::<serde_json::Value>(
+            &token,
+            &DecodingKey::from_secret("test-secret".as_bytes()),
+            &validation,
+        )
+        .unwrap();
+
+        assert_eq!(data.claims["role"], "service_role");
     }
 }

@@ -5,11 +5,13 @@ use axum::{
 
 use reqwest::{StatusCode, header::AUTHORIZATION};
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::{
-    auth::{AuthUser, Merchant, RequireRole},
+    auth::{Admin, AuthUser, Merchant, RequireRole},
     error::AppError::{self},
     repository::{self, Profile},
+    revocation,
     state::AppState,
 };
 
@@ -110,6 +112,43 @@ pub async fn logout(
             "Không gọi được GoTrue logout ({err}) — revocation nội bộ đã ghi nên vẫn coi là logout thành công"
         ),
     }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn ban_user(
+    RequireRole(AuthUser(_admin, _), _): RequireRole<Admin>,
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state
+        .revocation
+        .revoke_user(user_id, revocation::PERMANENT_BAN_TTL_SECONDS)
+        .await
+        .map_err(|_| AppError::Cache("không ghi được revocation, ban thất bại".to_string()))?;
+    match crate::auth::mint_service_token(&state.config.jwt_secret, &state.config.jwt_audience) {
+        Ok(service_token) => {
+            let client = reqwest::Client::new();
+            let gotrue_ban_url = format!("{}/admin/users/{user_id}", state.config.gotrue_url);
+            match client
+                .put(&gotrue_ban_url)
+                .header(AUTHORIZATION, format!("Bearer {service_token}"))
+                .json(&serde_json::json!({ "ban_duration": "87600h" }))
+                .send()
+                .await
+            {
+                Ok(response) if response.status().is_success() => {}
+                Ok(response) => tracing::warn!(
+                    "GoTrue admin ban trả về status {} — revocation nội bộ đã ghi nên vẫn coi là ban thành công",
+                    response.status()
+                ),
+                Err(err) => tracing::warn!(
+                    "Không gọi được GoTrue admin ban ({err}) — revocation nội bộ đã ghi nên vẫn coi là ban thành công"
+                ),
+            }
+        }
+        Err(err) => tracing::warn!("Không mint được service token để gọi GoTrue admin ban: {err}"),
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -220,5 +259,35 @@ mod tests {
         .await;
 
         assert!(response.message.contains(&expected_id.to_string()));
+    }
+    #[tokio::test]
+    async fn ban_user_ghi_revocation_du_gotrue_khong_goi_duoc() {
+        let state = AppState::for_test(4000);
+        let admin_claims = Claims {
+            sub: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            email: Some("admin@example.com".to_string()),
+            role: String::new(),
+            aud: "authenticated".to_string(),
+            exp: 9999999999,
+            app_metadata: serde_json::json!({ "role": "admin" }),
+        };
+        let target_user_id = Uuid::new_v4();
+
+        let result = ban_user(
+            RequireRole(AuthUser(admin_claims, "token".to_string()), PhantomData),
+            State(state.clone()),
+            Path(target_user_id),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            state
+                .revocation
+                .is_user_revoked(target_user_id)
+                .await
+                .unwrap()
+        );
     }
 }
